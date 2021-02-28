@@ -1,2 +1,4 @@
 *.gif
 test.py
+__pycache__
+*.mp4

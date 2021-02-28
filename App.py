@@ -6,7 +6,10 @@ import os
 from pytube import Playlist, YouTube
 from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Thread
 from queue import Queue, Full, Empty
+from download import Download
+
 class GUI(object):
     def __init__(self):
         self.window = tk.Tk()
@@ -18,7 +21,7 @@ class GUI(object):
         self.canvas.pack()
         self.frame = tk.Frame(self.window, width = 650, height = 200, bg = "black")
         self.frame.grid_propagate(0)
-        self.frame.pack()
+        self.frame.pack(pady=0)
         self.videoLinkLabel = ttk.Label(self.frame, text = "Video Link:", foreground = "cyan", background = "black").\
             grid(row = 0, column = 0, padx = 5, pady = 40, sticky= tk.W)
         self.url_link = tk.StringVar()
@@ -43,33 +46,53 @@ class GUI(object):
         self.browseFolder = ttk.Button(self.frame, image = self.folderImage, command = lambda: self.folder.set\
             (fd.askdirectory(parent = self.window)))
         self.browseFolder.grid(row = 2, column = 2, padx = 5)
-        self.frame2 = tk.Frame(self.window, width=650, height=173, bg="black")
+        self.frame2 = tk.Frame(self.window, width=650, height=70, bg="black")
         self.frame2.grid_propagate(0)
         self.frame2.pack()
         self.downloadImage = tk.PhotoImage(file="download.gif")
         self.downloadButton = ttk.Button(self.frame2, image = self.downloadImage, command = self.scheduleVideoDownload)
         self.downloadButton.grid(row = 3, column = 3, padx = 470, sticky = tk.E)
+        self.frame3 = tk.Frame(self.window, width=650, height=20, bg="black")
+        self.frame3.grid_propagate(0)
+        self.frame3.pack()
+        ttk.Label(self.frame3, text="Current Download: ", foreground="cyan", background="black", font="Times 10").\
+            grid(row=4, column = 0, sticky = tk.W)
+        self.downloadTitleVar = tk.StringVar()
+        self.downloadTitleVar.set('None')
+        self.downloadTitleLabel = ttk.Label(self.frame3, textvariable=self.downloadTitleVar, foreground="cyan",
+                                            background="black", font="Times 10")
+        self.downloadTitleLabel.grid(row=4, column = 1)
+        self.frame4 = tk.Frame(self.window, width=650, height=60, bg="black")
+        self.frame4.grid_propagate(0)
+        self.frame4.pack()
+        self.progressBar = ttk.Progressbar(self.frame4, orient= "horizontal", length = 600, mode = "determinate")
+        self.progressBar["maximum"] = 100
+        self.progressBar.grid(row=5, pady= 5)
         self.downloadScheduler = ThreadPoolExecutor(max_workers=3)
         self.urlQueue = Queue(maxsize=3)
         self.resolutionQueue = Queue(maxsize=3)
+        self.downloadResults = []
         self.window.mainloop()
 
     def scheduleVideoDownload(self):
         try:
             self.urlQueue.put(self.url_link.get(), block=False)
             self.resolutionQueue.put(self.resolution.get(), block=True)
-            self.downloadScheduler.submit()
-            self.youtubeObject = YouTube(self.url_link.get())
-            #first try and see if a progressive stream is available
-            for elem in self.youtubeObject.streams:
-                print(elem)
-            progressiveStream = self.youtubeObject.streams.filter(progressive=True, file_extension='mp4',
-                                                                  resolution=self.resolution.get())
-            if progressiveStream.first() is None:
-                adaptiveStreamVideo = self.youtubeObject.streams.filter(adaptive=True, file_extension='mp4',
-                                                                        resolution=self.resolution.get())
-                adaptiveStreamAudio = self.youtubeObject.streams.filter(adaptive=True, file_extension='mp4',
-                                                                        only_audio=True)
+            Thread(target=self.createDownloadObject, args=[], daemon=True).start()
+        except Empty as error:
+            tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
+        except Full:
+            tkinter.messagebox.showerror("YoutubeDownloaderError", "ERROR: cannot have more that 2 downloads queued")
+
+    def createDownloadObject(self):
+        try:
+            download = Download()
+            self.downloadResults.append(self.downloadScheduler.submit(download.downloadVideo,
+                             self.url_link.get(), self.resolution.get(), self.progressBar, self.downloadTitleVar,
+                                                                      self.folder))
+            for results in as_completed(self.downloadResults):
+                results.result()
+            tkinter.messagebox.showinfo("YoutubeDownloader Info", "Download complete")
         except VideoPrivate as error:
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         except VideoUnavailable as error:
@@ -77,9 +100,13 @@ class GUI(object):
         except PytubeError as error:
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         except BaseException as error:
+            if error == '':
+                error = "An unknown error occurred"
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
-
-
-
+        finally:
+            self.urlQueue.get(block=False)
+            self.resolutionQueue.get(block=False)
+            self.progressBar["value"] = 0
+            self.downloadTitleVar.set('None')
 
 GUI()
