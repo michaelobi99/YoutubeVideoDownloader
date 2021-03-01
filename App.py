@@ -15,6 +15,8 @@ class GUI(object):
         self.window = tk.Tk()
         self.window.title("Youtube Video Downloader")
         self.window.resizable(False, False)
+        style = ttk.Style()
+        style.theme_use('clam')
         self.canvas = tk.Canvas(self.window, width = 650, height = 77, bg = "grey")
         self.youtubeImage = tk.PhotoImage(file ="youtube.gif")
         self.canvas.create_image(150, 40, image =self.youtubeImage)
@@ -65,9 +67,9 @@ class GUI(object):
         self.frame4 = tk.Frame(self.window, width=650, height=60, bg="black")
         self.frame4.grid_propagate(0)
         self.frame4.pack()
-        self.progressBar = ttk.Progressbar(self.frame4, orient= "horizontal", length = 600, mode = "determinate")
-        self.progressBar["maximum"] = 100
-        self.progressBar.grid(row=5, pady= 5)
+        self.progressCanvas = tk.Canvas(self.frame4, width = 600, height = 15, bg="grey")
+        self.progressCanvas.create_rectangle(0,0,0,15, fill="cyan", tags="progress")
+        self.progressCanvas.grid(row =0, sticky=tk.W, pady=10)
         self.downloadScheduler = ThreadPoolExecutor(max_workers=3)
         self.urlQueue = Queue(maxsize=3)
         self.resolutionQueue = Queue(maxsize=3)
@@ -76,8 +78,9 @@ class GUI(object):
 
     def scheduleVideoDownload(self):
         try:
+            self.downloadTitleVar.set('Searching...')
             self.urlQueue.put(self.url_link.get(), block=False)
-            self.resolutionQueue.put(self.resolution.get(), block=True)
+            self.resolutionQueue.put(self.resolution.get(), block=False)
             Thread(target=self.createDownloadObject, args=[], daemon=True).start()
         except Empty as error:
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
@@ -88,8 +91,8 @@ class GUI(object):
         try:
             download = Download()
             self.downloadResults.append(self.downloadScheduler.submit(download.downloadVideo,
-                             self.url_link.get(), self.resolution.get(), self.progressBar, self.downloadTitleVar,
-                                                                      self.folder))
+                             self.url_link.get(), self.resolution.get(), self.progressCanvas, self.downloadTitleVar,
+                                                                      self.folder.get()))
             for results in as_completed(self.downloadResults):
                 results.result()
             tkinter.messagebox.showinfo("YoutubeDownloader Info", "Download complete")
@@ -99,6 +102,8 @@ class GUI(object):
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         except PytubeError as error:
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
+        except FileNotFoundError as error:
+            tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         except BaseException as error:
             if error == '':
                 error = "An unknown error occurred"
@@ -106,7 +111,8 @@ class GUI(object):
         finally:
             self.urlQueue.get(block=False)
             self.resolutionQueue.get(block=False)
-            self.progressBar["value"] = 0
             self.downloadTitleVar.set('None')
+            self.progressCanvas.delete("progress")
+            self.progressCanvas.update()
 
 GUI()
