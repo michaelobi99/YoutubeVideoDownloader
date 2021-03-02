@@ -6,7 +6,6 @@ import os
 from pytube import Playlist, YouTube
 from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Thread
 from queue import Queue, Full, Empty
 from download import Download
 
@@ -70,17 +69,17 @@ class GUI(object):
         self.progressCanvas = tk.Canvas(self.frame4, width = 600, height = 15, bg="grey")
         self.progressCanvas.create_rectangle(0,0,0,15, fill="cyan", tags="progress")
         self.progressCanvas.grid(row =0, sticky=tk.W, pady=10)
-        self.downloadScheduler = ThreadPoolExecutor(max_workers=3)
+        self.downloadExecutor = ThreadPoolExecutor(max_workers=1)
+        self.downloadScheduler = ThreadPoolExecutor(max_workers=1)
         self.urlQueue = Queue(maxsize=3)
         self.resolutionQueue = Queue(maxsize=3)
         self.window.mainloop()
 
     def scheduleVideoDownload(self):
         try:
-            self.downloadTitleVar.set('Searching...')
             self.urlQueue.put(self.url_link.get(), block=False)
             self.resolutionQueue.put(self.resolution.get(), block=False)
-            Thread(target=self.createDownloadObject, args=[], daemon=True).start()
+            self.downloadScheduler.submit(self.createDownloadObject)
         except Empty as error:
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         except Full:
@@ -88,8 +87,9 @@ class GUI(object):
 
     def createDownloadObject(self):
         try:
+            self.downloadTitleVar.set('Searching...')
             download = Download()
-            future = self.downloadScheduler.submit(download.downloadVideo, self.url_link.get(), self.resolution.get(),
+            future = self.downloadExecutor.submit(download.downloadVideo, self.url_link.get(), self.resolution.get(),
                                                    self.progressCanvas, self.downloadTitleVar, self.folder.get())
             for results in as_completed([future]):
                 results.result()
@@ -109,8 +109,5 @@ class GUI(object):
         finally:
             _ = self.urlQueue.get(block=False)
             _ = self.resolutionQueue.get(block=False)
-            self.downloadTitleVar.set('None')
-            self.progressCanvas.delete("progress")
-            self.progressCanvas.update()
 
 GUI()

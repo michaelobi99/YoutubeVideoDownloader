@@ -3,11 +3,12 @@ from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ffmpeg
 import os
+from contextlib import suppress
 
 class Download(object):
     def __init__(self):
-        self.downloadOngoing = False
-        self.progressBar = 0
+        self.progressBar: int = 0
+        self.dataEntered: int = 0
         self.isAdaptiveStream = False
     def downloadVideo(self, videoUrl, resolution, progressCanvas, title, folder):
         try:
@@ -16,16 +17,19 @@ class Download(object):
             self.progressCanvas = progressCanvas
             self.title = title
             self.folder = str(folder)
-            if 'playlist' in videoUrl or 'list' in videoUrl:
+            if 'playlist' in videoUrl or 'list' in videoUrl and 'index' not in videoUrl:
                 urlList = Playlist(videoUrl).video_urls
                 for url in urlList:
                     youtubeObject = YouTube(url, on_progress_callback=self.showDownloadProgress)
                     self.startDownload(youtubeObject, resolution)
+                    self.resetValues()
             else:
                 #no need for download complete callback since it is already in one file
                 youtubeObject = YouTube(videoUrl, on_progress_callback=self.showDownloadProgress)
                 # first try and see if a progressive stream is available
                 self.startDownload(youtubeObject, resolution)
+                self.resetValues()
+
         except VideoPrivate as error:
             raise error
         except VideoUnavailable as error:
@@ -34,6 +38,13 @@ class Download(object):
             raise error
         except BaseException as error:
             raise error
+
+    def resetValues(self):
+        self.title.set('None')
+        self.progressCanvas.delete("progress")
+        self.progressCanvas.update()
+        self.progressBar = 0
+        self.dataEntered = 0
 
     def startDownload(self, youtubeObject, resolution):
         global downloadOngoing
@@ -62,30 +73,23 @@ class Download(object):
                         adaptiveDownloadList.append(executor.submit(lambda: adaptiveStreamAudio.first().download(
                             output_path=self.folder, filename= self.audioTitle.replace('.mp4', '')
                         )))
-                        self.downloadOngoing = True
                     for future in as_completed(adaptiveDownloadList):
                         future.result()
 
                     self.mergeFiles()
             else:
                 self.title.set(youtubeObject.title)
-                self.downloadOngoing = True
                 self.getFileSize(progressiveStream.first().filesize)
                 progressiveStream.first().download(output_path=self.folder)
         except VideoPrivate as error:
-            self.downloadOngoing = False
             raise error
         except VideoUnavailable as error:
-            self.downloadOngoing = False
             raise error
         except PytubeError as error:
-            self.downloadOngoing = False
             raise error
         except FileNotFoundError as error:
-            self.downloadOngoing = False
             raise error
         except BaseException as error:
-            self.downloadOngoing = False
             raise error
 
     def getFileSize(self, data_size):
@@ -95,17 +99,13 @@ class Download(object):
         self.steps = 600 // self.firstNumber
 
     def showDownloadProgress(self, stream, data_chunk, data_remaining):
-        try:
-            if data_remaining < self.target:
-                self.progressBar += self.steps
-                self.dataEntered = 600/data_remaining
-                self.progressCanvas.delete("progress")
-                self.progressCanvas.update()
-                self.progressCanvas.create_rectangle(0, 0, self.progressBar, 15, fill = "cyan", tags="progress")
-                self.progressCanvas.update()
-                self.target -= self.sizeDecreament
-        except ZeroDivisionError:
-            pass
+        with suppress(ZeroDivisionError):
+            self.dataEntered += len(data_chunk)
+            self.progressBar = int((self.dataEntered / data_remaining) * 600)
+            self.progressCanvas.delete("progress")
+            self.progressCanvas.update()
+            self.progressCanvas.create_rectangle(0, 0, self.progressBar, 15, fill="cyan", tags="progress")
+            self.progressCanvas.update()
 
 
     def mergeFiles(self):
