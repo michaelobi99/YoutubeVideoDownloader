@@ -73,7 +73,6 @@ class GUI(object):
         self.downloadScheduler = ThreadPoolExecutor(max_workers=3)
         self.urlQueue = Queue(maxsize=3)
         self.resolutionQueue = Queue(maxsize=3)
-        self.downloadResults = []
         self.window.mainloop()
 
     def scheduleVideoDownload(self):
@@ -90,10 +89,9 @@ class GUI(object):
     def createDownloadObject(self):
         try:
             download = Download()
-            self.downloadResults.append(self.downloadScheduler.submit(download.downloadVideo,
-                             self.url_link.get(), self.resolution.get(), self.progressCanvas, self.downloadTitleVar,
-                                                                      self.folder.get()))
-            for results in as_completed(self.downloadResults):
+            future = self.downloadScheduler.submit(download.downloadVideo, self.url_link.get(), self.resolution.get(),
+                                                   self.progressCanvas, self.downloadTitleVar, self.folder.get())
+            for results in as_completed([future]):
                 results.result()
             tkinter.messagebox.showinfo("YoutubeDownloader Info", "Download complete")
         except VideoPrivate as error:
@@ -109,8 +107,8 @@ class GUI(object):
                 error = "An unknown error occurred"
             tkinter.messagebox.showerror("YoutubeDownloaderError", f"ERROR: {error}")
         finally:
-            self.urlQueue.get(block=False)
-            self.resolutionQueue.get(block=False)
+            _ = self.urlQueue.get(block=False)
+            _ = self.resolutionQueue.get(block=False)
             self.downloadTitleVar.set('None')
             self.progressCanvas.delete("progress")
             self.progressCanvas.update()

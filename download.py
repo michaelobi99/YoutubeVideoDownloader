@@ -3,7 +3,6 @@ from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ffmpeg
 import os
-from contextlib import suppress
 
 class Download(object):
     def __init__(self):
@@ -12,19 +11,19 @@ class Download(object):
         self.isAdaptiveStream = False
     def downloadVideo(self, videoUrl, resolution, progressCanvas, title, folder):
         try:
+            if videoUrl == '':
+                raise BaseException("No url provided")
             self.progressCanvas = progressCanvas
             self.title = title
             self.folder = str(folder)
             if 'playlist' in videoUrl or 'list' in videoUrl:
                 urlList = Playlist(videoUrl).video_urls
                 for url in urlList:
-                    youtubeObject = YouTube(url, on_progress_callback=self.showDownloadProgress,
-                                            on_complete_callback=self.mergeFiles)
+                    youtubeObject = YouTube(url, on_progress_callback=self.showDownloadProgress)
                     self.startDownload(youtubeObject, resolution)
             else:
                 #no need for download complete callback since it is already in one file
-                youtubeObject = YouTube(videoUrl, on_progress_callback=self.showDownloadProgress,
-                                        on_complete_callback=self.mergeFiles)
+                youtubeObject = YouTube(videoUrl, on_progress_callback=self.showDownloadProgress)
                 # first try and see if a progressive stream is available
                 self.startDownload(youtubeObject, resolution)
         except VideoPrivate as error:
@@ -66,8 +65,8 @@ class Download(object):
                         self.downloadOngoing = True
                     for future in as_completed(adaptiveDownloadList):
                         future.result()
-                    os.unlink(os.path.join(self.folder, self.videoTitle))
-                    os.unlink(os.path.join(self.folder, self.audioTitle))
+
+                    self.mergeFiles()
             else:
                 self.title.set(youtubeObject.title)
                 self.downloadOngoing = True
@@ -109,16 +108,21 @@ class Download(object):
             pass
 
 
-    def mergeFiles(self, stream, path):
+    def mergeFiles(self):
+        videoFilePath = os.path.join(self.folder, self.videoTitle)
+        audioFilePAth = os.path.join(self.folder, self.audioTitle)
+        destinationPath = videoFilePath.replace("_video", '')
+        print(os.path.join(self.folder, destinationPath))
         if self.isAdaptiveStream:
-            with suppress(FileNotFoundError, BaseException):
-                destinationPath = self.videoTitle.replace("_video", '')
-                self.title.set('merging downloaded files, please wait...')
-                inputVideo = ffmpeg.input(os.path.join(self.folder, self.videoTitle))
-                inputAudio = ffmpeg.input(os.path.join(self.folder, self.audioTitle))
-                ffmpeg.concat(
-                    inputVideo, inputAudio, v=1, a=1
-                ).output(os.path.join(self.folder, destinationPath)).run()
+            self.title.set('merging downloaded files, please wait...')
+            inputVideo = ffmpeg.input(videoFilePath)
+            inputAudio = ffmpeg.input(audioFilePAth)
+            joinFile = ffmpeg.concat(
+                inputVideo, inputAudio, v=1, a=1
+            )
+            joinFile.output(destinationPath).run()
+        os.unlink(videoFilePath)
+        os.unlink(audioFilePAth)
 
 
 
