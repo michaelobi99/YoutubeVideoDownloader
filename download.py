@@ -92,12 +92,6 @@ class Download(object):
         except BaseException as error:
             raise error
 
-    def getFileSize(self, data_size):
-        self.firstNumber = int(str(data_size)[0])
-        self.sizeDecreament = int(10 ** (len(str(data_size)) - 1))
-        self.target = self.firstNumber * self.sizeDecreament
-        self.steps = 600 // self.firstNumber
-
     def showDownloadProgress(self, stream, data_chunk, data_remaining):
         with suppress(ZeroDivisionError):
             self.dataEntered += len(data_chunk)
