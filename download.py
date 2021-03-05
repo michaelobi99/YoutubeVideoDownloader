@@ -2,6 +2,7 @@ from pytube import Playlist, YouTube
 from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ffmpeg
+import subprocess
 import os
 from contextlib import suppress
 
@@ -65,8 +66,7 @@ class Download(object):
                     self.title.set(f'{youtubeObject.title}')
                     self.videoTitle = str(self.title.get()) + '_video' + '.mp4'
                     self.audioTitle = str(self.title.get()) + '_audio' + '.mp4'
-                    with ThreadPoolExecutor(max_workers=2) as executor:
-                        self.getFileSize(adaptiveStreamVideo.first().filesize)
+                    with ThreadPoolExecutor(max_workers=1) as executor:
                         adaptiveDownloadList.append(executor.submit(lambda: adaptiveStreamVideo.first().download(
                             output_path=self.folder, filename= self.videoTitle.replace('.mp4', '')
                         )))
@@ -77,9 +77,9 @@ class Download(object):
                         future.result()
 
                     self.mergeFiles()
+                    self.deleteFiles()
             else:
                 self.title.set(youtubeObject.title)
-                self.getFileSize(progressiveStream.first().filesize)
                 progressiveStream.first().download(output_path=self.folder)
         except VideoPrivate as error:
             raise error
@@ -103,20 +103,29 @@ class Download(object):
 
 
     def mergeFiles(self):
-        videoFilePath = os.path.join(self.folder, self.videoTitle)
-        audioFilePAth = os.path.join(self.folder, self.audioTitle)
-        destinationPath = videoFilePath.replace("_video", '')
-        print(os.path.join(self.folder, destinationPath))
-        if self.isAdaptiveStream:
-            self.title.set('merging downloaded files, please wait...')
-            inputVideo = ffmpeg.input(videoFilePath)
-            inputAudio = ffmpeg.input(audioFilePAth)
-            joinFile = ffmpeg.concat(
-                inputVideo, inputAudio, v=1, a=1
-            )
-            joinFile.output(destinationPath).run()
-        os.unlink(videoFilePath)
-        os.unlink(audioFilePAth)
+        self.title.set(f'Merging files...please wait')
+        self.paths = []
+        files = os.listdir(self.folder)
+        for file in files:
+            if file.endswith('_video.mp4'):
+                self.paths.append(file)
+        for file in files:
+            if file.endswith('_audio.mp4'):
+                self.paths.append(file)
+        videoFilePath = ffmpeg.input(os.path.join(self.folder, self.paths[0]))
+        audioFilePAth = ffmpeg.input(os.path.join(self.folder, self.paths[1]))
+        filePath = os.path.join(self.folder, self.paths[0].replace('_video', ''))
+        if os.path.basename(filePath) in files:
+            os.unlink(os.path.join(self.folder, filePath))
+        vcodec = "copy"
+        acodec = "aac"
+        out = ffmpeg.output(videoFilePath, audioFilePAth, filePath, vcodec=vcodec, acodec=acodec, strict='experimental')
+        out.run()
+
+    def deleteFiles(self):
+        with suppress(BaseException):
+            os.unlink(os.path.join(self.folder, self.paths[0]))
+            os.unlink(os.path.join(self.folder, self.paths[1]))
 
 
 
