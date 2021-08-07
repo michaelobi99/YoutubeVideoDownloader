@@ -3,3 +3,4 @@ test.py
 __pycache__
 *.mp4
 ffmpeg.exe
+App.exe

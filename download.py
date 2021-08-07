@@ -1,23 +1,25 @@
-from pytube import Playlist, YouTube
-from pytube.exceptions import VideoPrivate, VideoUnavailable, PytubeError
+from pytube import YouTube, Playlist
+from pytube.exceptions import (VideoUnavailable, PytubeError, ExtractError, HTMLParseError,
+                                )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ffmpeg
-import subprocess
 import os
 from contextlib import suppress
-
+from typing import Any
 class Download(object):
     def __init__(self):
         self.progressBar: int = 0
-        self.dataEntered: int = 0
         self.isAdaptiveStream = False
-    def downloadVideo(self, videoUrl, resolution, progressCanvas, title, folder):
+        self.fileSize: int = 0
+        self.fileSizeEntered: int = 0
+    def downloadVideo(self, videoUrl, resolution, progressCanvas, title, size, folder):
         try:
             if videoUrl == '':
                 raise BaseException("No url provided")
             self.progressCanvas = progressCanvas
             self.title = title
             self.folder = str(folder)
+            self.sizeLabel = size
             if 'playlist' in videoUrl or 'list' in videoUrl and 'index' not in videoUrl:
                 urlList = Playlist(videoUrl).video_urls
                 for url in urlList:
@@ -26,16 +28,21 @@ class Download(object):
                     self.resetValues()
             else:
                 #no need for download complete callback since it is already in one file
+                #after 3 months, the above comment makes no sense
                 youtubeObject = YouTube(videoUrl, on_progress_callback=self.showDownloadProgress)
                 # first try and see if a progressive stream is available
                 self.startDownload(youtubeObject, resolution)
                 self.resetValues()
-
-        except VideoPrivate as error:
-            raise error
         except VideoUnavailable as error:
             raise error
+        except ExtractError as error:
+            raise error
+        except HTMLParseError as error:
+            raise error
+
         except PytubeError as error:
+            raise error
+        except FileNotFoundError as error:
             raise error
         except BaseException as error:
             raise error
@@ -43,6 +50,7 @@ class Download(object):
     def resetValues(self):
         self.title.set('None')
         self.progressCanvas.delete("progress")
+        self.sizeLabel.set(f'({0} / {0})mb')
         self.progressCanvas.update()
         self.progressBar = 0
         self.dataEntered = 0
@@ -81,9 +89,11 @@ class Download(object):
             else:
                 self.title.set(youtubeObject.title)
                 progressiveStream.first().download(output_path=self.folder)
-        except VideoPrivate as error:
-            raise error
         except VideoUnavailable as error:
+            raise error
+        except ExtractError as error:
+            raise error
+        except HTMLParseError as error:
             raise error
         except PytubeError as error:
             raise error
@@ -92,13 +102,17 @@ class Download(object):
         except BaseException as error:
             raise error
 
-    def showDownloadProgress(self, stream, data_chunk, data_remaining):
+    def showDownloadProgress(self, fileHandler: Any, data_chunk: bytes, data_remaining: int):
+        mb = (1024 ** 2)
+        self.fileSizeEntered += len(data_chunk)
+        self.fileSize = (self.fileSizeEntered + data_remaining) / mb
+        self.fileSizeEnteredInMb = self.fileSizeEntered / mb
         with suppress(ZeroDivisionError):
-            self.dataEntered += len(data_chunk)
-            self.progressBar = int((self.dataEntered / data_remaining) * 600)
+            self.sizeLabel.set(f'({"{:.2f}".format(self.fileSizeEnteredInMb)} / {"{:.2f}".format(self.fileSize)})mb')
+            self.progressBar = int(((self.fileSizeEnteredInMb  / self.fileSize) * 600))
             self.progressCanvas.delete("progress")
             self.progressCanvas.update()
-            self.progressCanvas.create_rectangle(0, 0, self.progressBar, 15, fill="cyan", tags="progress")
+            self.progressCanvas.create_rectangle(0, 0, self.progressBar, 15, fill="red", tags="progress")
             self.progressCanvas.update()
 
 
@@ -126,6 +140,3 @@ class Download(object):
         with suppress(BaseException):
             os.unlink(os.path.join(self.folder, self.paths[0]))
             os.unlink(os.path.join(self.folder, self.paths[1]))
-
-
-
